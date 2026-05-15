@@ -17,6 +17,10 @@ voice.json
 runners/qwen/speak.py
   The runner. It loads a voice ID and asks Qwen to generate audio from text.
 
+runners/qwen/serve.py
+  Optional warm localhost server. It keeps Qwen loaded and renders requests
+  without starting a fresh Python process every time.
+
 Qwen Base model
   The actual TTS engine. Downloaded from Hugging Face on the user's machine.
 ```
@@ -41,6 +45,7 @@ library/
 runners/
   qwen/
     speak.py
+    serve.py
     requirements.txt
 
 schemas/
@@ -94,6 +99,35 @@ afplay /tmp/voicepack-demo.mp3
 ```
 
 For non-macOS systems, use any audio player that can play MP3 files.
+
+## Keep Qwen Warm
+
+For agent hooks, a one-shot `speak.py` call is simple but slow because it starts
+Python and loads Qwen for every line. Run the warm server when you want lower
+latency:
+
+```bash
+python runners/qwen/serve.py \
+  --voice library/cortana \
+  --host 127.0.0.1 \
+  --port 8765 \
+  --device mps \
+  --dtype float16
+```
+
+Health check:
+
+```bash
+curl http://127.0.0.1:8765/health
+```
+
+Render through the server:
+
+```bash
+curl -sS http://127.0.0.1:8765/speak \
+  -H "Content-Type: application/json" \
+  --data '{"text":"System ready.","voice":"library/cortana","output":"/tmp/voicepack-server.wav"}'
+```
 
 ## Search The Library
 
