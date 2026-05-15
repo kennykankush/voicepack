@@ -33,7 +33,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-k", type=int, default=None)
     parser.add_argument("--top-p", type=float, default=None)
     parser.add_argument("--repetition-penalty", type=float, default=None)
-    return parser.parse_args()
+    parser.add_argument(
+        "--idle-timeout",
+        type=float,
+        default=0,
+        help="Exit after this many seconds without /speak requests. Use 0 to disable.",
+    )
+    parser.add_argument(
+        "--idle-check-interval",
+        type=float,
+        default=5,
+        help="Seconds between idle-timeout checks.",
+    )
+    args = parser.parse_args()
+    if args.idle_timeout < 0:
+        parser.error("--idle-timeout must be 0 or greater.")
+    if args.idle_check_interval <= 0:
+        parser.error("--idle-check-interval must be greater than 0.")
+    return args
 
 
 class QwenRuntime:
@@ -54,8 +71,29 @@ class QwenRuntime:
         self.repetition_penalty = 0.0
         self.tts: Qwen3TTSModel | None = None
         self.lock = threading.Lock()
+        self.activity_lock = threading.Lock()
+        self.last_speak_at = time.monotonic()
+        self.active_renders = 0
         self.load_voice(args.voice)
         self.load_model()
+
+    def reset_idle_clock(self) -> None:
+        with self.activity_lock:
+            self.last_speak_at = time.monotonic()
+
+    def mark_render_start(self) -> None:
+        with self.activity_lock:
+            self.active_renders += 1
+            self.last_speak_at = time.monotonic()
+
+    def mark_render_end(self) -> None:
+        with self.activity_lock:
+            self.active_renders = max(0, self.active_renders - 1)
+            self.last_speak_at = time.monotonic()
+
+    def idle_status(self) -> tuple[bool, float]:
+        with self.activity_lock:
+            return self.active_renders > 0, time.monotonic() - self.last_speak_at
 
     def load_voice(self, voice_path: str) -> None:
         voice_dir, voice = resolve_voice(voice_path)
@@ -201,11 +239,40 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
-            with self.runtime.lock:
-                response = self.runtime.render(payload)
+            self.runtime.mark_render_start()
+            try:
+                with self.runtime.lock:
+                    response = self.runtime.render(payload)
+            finally:
+                self.runtime.mark_render_end()
             self.send_json(200, response)
         except Exception as exc:  # noqa: BLE001 - surface local server failures as JSON.
             self.send_json(500, {"ok": False, "error": str(exc)})
+
+
+def start_idle_watchdog(
+    server: ThreadingHTTPServer,
+    runtime: QwenRuntime,
+    timeout_seconds: float,
+    check_interval_seconds: float,
+) -> threading.Event:
+    stop_event = threading.Event()
+
+    def watch_idle() -> None:
+        while not stop_event.wait(check_interval_seconds):
+            render_active, idle_for = runtime.idle_status()
+            if render_active or idle_for < timeout_seconds:
+                continue
+            print(
+                f"Idle timeout reached after {idle_for:.1f}s without /speak requests; shutting down.",
+                flush=True,
+            )
+            server.shutdown()
+            break
+
+    thread = threading.Thread(target=watch_idle, name="qwen-tts-idle-watchdog", daemon=True)
+    thread.start()
+    return stop_event
 
 
 def main() -> int:
@@ -214,11 +281,26 @@ def main() -> int:
     Handler.runtime = runtime
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"Qwen TTS server listening on http://{args.host}:{args.port}", flush=True)
+    runtime.reset_idle_clock()
+    idle_stop_event: threading.Event | None = None
+    if args.idle_timeout > 0:
+        idle_stop_event = start_idle_watchdog(
+            server,
+            runtime,
+            args.idle_timeout,
+            args.idle_check_interval,
+        )
+        print(
+            f"Idle timeout enabled: {args.idle_timeout:g}s without /speak requests.",
+            flush=True,
+        )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        if idle_stop_event is not None:
+            idle_stop_event.set()
         server.server_close()
     return 0
 

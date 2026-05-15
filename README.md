@@ -112,8 +112,13 @@ python runners/qwen/serve.py \
   --host 127.0.0.1 \
   --port 8765 \
   --device mps \
-  --dtype float16
+  --dtype float16 \
+  --idle-timeout 300
 ```
+
+`--idle-timeout 300` shuts the warm server down after five minutes without a
+`/speak` request, releasing local model memory. Health checks do not reset the
+timer. Use `--idle-timeout 0` to keep the server alive until you stop it.
 
 Health check:
 
