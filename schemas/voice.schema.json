@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Voicepack Voice Metadata",
+  "type": "object",
+  "required": [
+    "id",
+    "display_name",
+    "version",
+    "engine",
+    "model",
+    "voice_file",
+    "preview",
+    "language",
+    "keywords",
+    "description"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "display_name": { "type": "string" },
+    "version": { "type": "string" },
+    "status": { "type": "string" },
+    "engine": { "type": "string" },
+    "model": { "type": "string" },
+    "runner": { "type": "string" },
+    "voice_file": { "type": "string" },
+    "preview": { "type": "string" },
+    "language": { "type": "string" },
+    "gender_presentation": { "type": "string" },
+    "keywords": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "description": { "type": "string" },
+    "style": { "type": "object" },
+    "generation_defaults": { "type": "object" },
+    "source": { "type": "object" },
+    "safety": { "type": "object" }
+  },
+  "additionalProperties": true
+}

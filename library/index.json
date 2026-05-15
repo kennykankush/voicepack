@@ -1,0 +1,28 @@
+[
+  {
+    "id": "cortana",
+    "display_name": "Cortana",
+    "path": "library/cortana",
+    "engine": "qwen3-tts-base",
+    "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    "language": "en-US",
+    "gender_presentation": "female",
+    "keywords": [
+      "cortana",
+      "female",
+      "ai-assistant",
+      "holographic",
+      "military-ai",
+      "sci-fi",
+      "calm",
+      "synthetic",
+      "precise",
+      "neural-interface",
+      "mature",
+      "low-energy"
+    ],
+    "description": "Calm holographic female AI assistant voice with precise synthetic clarity.",
+    "preview": "library/cortana/preview.mp3",
+    "voice_file": "library/cortana/voice.pt"
+  }
+]

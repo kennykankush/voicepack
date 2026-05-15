@@ -1,0 +1,19 @@
+.DS_Store
+.env
+.venv/
+.venv-*/
+__pycache__/
+*.pyc
+
+# Local factory/private workbench. Keep these on disk, but do not distribute.
+/experiments/
+/references/
+/samples/
+/scripts/
+/voicepacks/
+/research/
+
+# Keep the public library and runner surfaces trackable.
+!/library/
+!/runners/
+!/schemas/

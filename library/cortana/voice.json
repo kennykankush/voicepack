@@ -1,0 +1,60 @@
+{
+  "$schema": "../../schemas/voice.schema.json",
+  "id": "cortana",
+  "display_name": "Cortana",
+  "version": "1.0.0",
+  "status": "ready",
+  "engine": "qwen3-tts-base",
+  "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+  "runner": "runners/qwen/speak.py",
+  "voice_file": "voice.pt",
+  "preview": "preview.mp3",
+  "language": "en-US",
+  "gender_presentation": "female",
+  "keywords": [
+    "cortana",
+    "female",
+    "ai-assistant",
+    "holographic",
+    "military-ai",
+    "sci-fi",
+    "calm",
+    "synthetic",
+    "precise",
+    "neural-interface",
+    "mature",
+    "low-energy"
+  ],
+  "description": "Calm holographic female AI assistant voice with precise synthetic clarity.",
+  "style": {
+    "age_impression": "late 20s to early 30s",
+    "pitch": "mid-to-high female",
+    "pace": "medium-slow",
+    "energy": "low-to-medium",
+    "texture": "smooth, glassy, synthetic, precise",
+    "emotion": "calm, analytical, loyal, quietly compassionate"
+  },
+  "generation_defaults": {
+    "device": "mps",
+    "dtype": "float16",
+    "seed": 16010,
+    "temperature": 0.82,
+    "top_k": 50,
+    "top_p": 0.95,
+    "repetition_penalty": 1.05
+  },
+  "source": {
+    "type": "synthetic-original",
+    "reference_text": "I've isolated the signal. It's faint, but intentional. Whatever left it behind wanted us to find it.",
+    "source_engine": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+    "source_seed": 16010
+  },
+  "safety": {
+    "affiliation": "Unofficial original generated voice preset. Not affiliated with Microsoft, Halo, 343 Industries, Xbox, Jen Taylor, or any named character owner.",
+    "not_allowed": [
+      "Do not market this as an official character voice.",
+      "Do not claim it is extracted from game audio, actor audio, or a copyrighted source recording.",
+      "Do not use it for deception or impersonation."
+    ]
+  }
+}
