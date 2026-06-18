@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import threading
 import time
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import soundfile as sf
+import torch
 from qwen_tts import Qwen3TTSModel
 from speak import (
     convert_to_mp3,
@@ -17,6 +19,16 @@ from speak import (
     resolve_voice,
     set_seed,
 )
+
+
+def release_runtime_memory() -> None:
+    gc.collect()
+    try:
+        if torch.backends.mps.is_available():
+            torch.mps.synchronize()
+            torch.mps.empty_cache()
+    except (AttributeError, RuntimeError):
+        pass
 
 
 def parse_args() -> argparse.Namespace:
@@ -132,6 +144,9 @@ class QwenRuntime:
         )
 
     def load_model(self) -> None:
+        if self.tts is not None:
+            self.tts = None
+            release_runtime_memory()
         print(f"Loading {self.model_name} on {self.device} ({self.dtype})", flush=True)
         self.tts = Qwen3TTSModel.from_pretrained(
             self.model_name,
@@ -171,36 +186,41 @@ class QwenRuntime:
         set_seed(seed)
         assert self.tts is not None
         started = time.perf_counter()
-        wavs, sample_rate = self.tts.generate_voice_clone(
-            text=text,
-            language=self.language,
-            voice_clone_prompt=self.prompt_items,
-            temperature=temperature,
-            top_k=top_k,
-            top_p=top_p,
-            repetition_penalty=repetition_penalty,
-        )
+        wavs: Any = None
+        try:
+            wavs, sample_rate = self.tts.generate_voice_clone(
+                text=text,
+                language=self.language,
+                voice_clone_prompt=self.prompt_items,
+                temperature=temperature,
+                top_k=top_k,
+                top_p=top_p,
+                repetition_penalty=repetition_penalty,
+            )
 
-        output = output.resolve()
-        output.parent.mkdir(parents=True, exist_ok=True)
-        if output.suffix.lower() == ".wav":
-            sf.write(output, wavs[0], sample_rate)
-        elif output.suffix.lower() == ".mp3":
-            wav_path = output.with_suffix(".wav")
-            sf.write(wav_path, wavs[0], sample_rate)
-            convert_to_mp3(wav_path, output)
-            wav_path.unlink(missing_ok=True)
-        else:
-            raise ValueError("Output path must end in .mp3 or .wav.")
+            output = output.resolve()
+            output.parent.mkdir(parents=True, exist_ok=True)
+            if output.suffix.lower() == ".wav":
+                sf.write(output, wavs[0], sample_rate)
+            elif output.suffix.lower() == ".mp3":
+                wav_path = output.with_suffix(".wav")
+                sf.write(wav_path, wavs[0], sample_rate)
+                convert_to_mp3(wav_path, output)
+                wav_path.unlink(missing_ok=True)
+            else:
+                raise ValueError("Output path must end in .mp3 or .wav.")
 
-        return {
-            "ok": True,
-            "output": str(output),
-            "voice": self.voice_key,
-            "model": self.model_name,
-            "sample_rate": sample_rate,
-            "render_ms": round((time.perf_counter() - started) * 1000),
-        }
+            return {
+                "ok": True,
+                "output": str(output),
+                "voice": self.voice_key,
+                "model": self.model_name,
+                "sample_rate": sample_rate,
+                "render_ms": round((time.perf_counter() - started) * 1000),
+            }
+        finally:
+            wavs = None
+            release_runtime_memory()
 
 
 class Handler(BaseHTTPRequestHandler):
