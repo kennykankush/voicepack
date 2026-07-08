@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import io
 import json
 import threading
 import time
@@ -172,9 +173,7 @@ class QwenRuntime:
         if not text:
             raise ValueError("Missing text.")
         output_text = str(payload.get("output", "")).strip()
-        if not output_text:
-            raise ValueError("Missing output.")
-        output = Path(output_text).expanduser()
+        output = Path(output_text).expanduser() if output_text else None
 
         self.maybe_reload_voice(payload.get("voice"))
         seed = int(payload.get("seed", self.seed))
@@ -198,25 +197,33 @@ class QwenRuntime:
                 repetition_penalty=repetition_penalty,
             )
 
-            output = output.resolve()
-            output.parent.mkdir(parents=True, exist_ok=True)
-            if output.suffix.lower() == ".wav":
-                sf.write(output, wavs[0], sample_rate)
-            elif output.suffix.lower() == ".mp3":
-                wav_path = output.with_suffix(".wav")
-                sf.write(wav_path, wavs[0], sample_rate)
-                convert_to_mp3(wav_path, output)
-                wav_path.unlink(missing_ok=True)
-            else:
-                raise ValueError("Output path must end in .mp3 or .wav.")
+            # Render WAV bytes in-memory so audio can be returned over HTTP to a
+            # remote client (Mac plays magi's render) as well as / instead of a file.
+            buffer = io.BytesIO()
+            sf.write(buffer, wavs[0], sample_rate, format="WAV")
+            audio_bytes = buffer.getvalue()
+
+            if output is not None:
+                output = output.resolve()
+                output.parent.mkdir(parents=True, exist_ok=True)
+                if output.suffix.lower() == ".wav":
+                    output.write_bytes(audio_bytes)
+                elif output.suffix.lower() == ".mp3":
+                    wav_path = output.with_suffix(".wav")
+                    wav_path.write_bytes(audio_bytes)
+                    convert_to_mp3(wav_path, output)
+                    wav_path.unlink(missing_ok=True)
+                else:
+                    raise ValueError("Output path must end in .mp3 or .wav.")
 
             return {
                 "ok": True,
-                "output": str(output),
+                "output": str(output) if output is not None else "",
                 "voice": self.voice_key,
                 "model": self.model_name,
                 "sample_rate": sample_rate,
                 "render_ms": round((time.perf_counter() - started) * 1000),
+                "_audio": audio_bytes,
             }
         finally:
             wavs = None
@@ -252,6 +259,16 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_json(404, {"ok": False, "error": "not found"})
 
+    def send_audio(self, code: int, audio: bytes, meta: dict[str, Any]) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", "audio/wav")
+        self.send_header("Content-Length", str(len(audio)))
+        self.send_header("X-Model", str(meta.get("model", "")))
+        self.send_header("X-Sample-Rate", str(meta.get("sample_rate", "")))
+        self.send_header("X-Render-Ms", str(meta.get("render_ms", "")))
+        self.end_headers()
+        self.wfile.write(audio)
+
     def do_POST(self) -> None:
         if self.path.rstrip("/") != "/speak":
             self.send_json(404, {"ok": False, "error": "not found"})
@@ -259,13 +276,22 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            # Remote clients ask for raw audio via {"return":"audio"} or Accept: audio/*
+            want_audio = (
+                str(payload.get("return", "")).lower() == "audio"
+                or "audio/" in (self.headers.get("Accept", "") or "")
+            )
             self.runtime.mark_render_start()
             try:
                 with self.runtime.lock:
                     response = self.runtime.render(payload)
             finally:
                 self.runtime.mark_render_end()
-            self.send_json(200, response)
+            audio = response.pop("_audio", None)
+            if want_audio and audio is not None:
+                self.send_audio(200, audio, response)
+            else:
+                self.send_json(200, response)
         except Exception as exc:  # noqa: BLE001 - surface local server failures as JSON.
             self.send_json(500, {"ok": False, "error": str(exc)})
 
